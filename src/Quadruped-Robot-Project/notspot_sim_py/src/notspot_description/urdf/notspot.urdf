@@ -909,8 +909,8 @@
 
   <xacro:include filename="ros_control.xacro" />
   <xacro:include filename="inertial_macros.xacro" />
-  <xacro:include filename="lidar.xacro" />
-  <xacro:include filename="camera.xacro" />
+  <!--<xacro:include filename="lidar.xacro" />
+  <xacro:include filename="camera.xacro" /> -->
 
   <gazebo>
     <plugin name="gazebo_ros_control" filename="libgazebo_ros_control.so" />

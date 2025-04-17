@@ -38,8 +38,8 @@ Buttons (Number Keys):
    2 : (Trot)
    3 : (Crawl)
    4 : (Stand)
-   5 : (Toggle LQR/PID controller)
-   6 : (Unused)
+   5 : 
+   6 : 
    7 : (Autorest (Trot only))
    8 : (Roll/Pitch Compensation)
 
@@ -75,10 +75,10 @@ buttonBindings = {
     '2': 1,  # Button 1 (Trot)
     '3': 2,  # Button 2 (Crawl)
     '4': 3,  # Button 3 (Stand)
-    '5': 4,  # Button 4 (Toggle LQR/PID)
+    '5': 4,  # Button 4
     '6': 5,  # Button 5
-    '7': 6,  # Button 6 (Autorest)
-    '8': 7,  # Button 7 (Roll/Pitch Compensation)
+    '7': 6,  # Button 6
+    '8': 7,  # Button 7
 }
 
 def getKey():

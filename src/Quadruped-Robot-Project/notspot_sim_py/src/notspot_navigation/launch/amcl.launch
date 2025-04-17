@@ -1,6 +1,11 @@
 <launch>
   <param name="use_sim_time" value="true" />
 
+  <arg name="map_file" default="$(find notspot_navigation)/maps/my_map.yaml"/>
+
+  <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
+
+
   <node pkg="amcl" type="amcl" name="amcl">
     <!-- AMCL parameters -->
 
@@ -17,7 +22,7 @@
     <param name="odom_alpha2" value="0.2"/>
 
     <!-- Remap topics -->
-    <remap from="scan" to="/notspot/lidar/scan"/>
+    <remap from="scan" to="/scan"/>
     <remap from="map" to="/map"/>
   </node>
 </launch>
