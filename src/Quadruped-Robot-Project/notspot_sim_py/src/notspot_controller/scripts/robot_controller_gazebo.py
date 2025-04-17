@@ -1,101 +1,29 @@
 #!/usr/bin/env python3
 #Author: lnotspotl
-#Modified with enhanced debugging, logging, and odometry
-
-# Add script directory to Python path
-import sys
-import os
-script_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(script_dir)
 
 import rospy
-import time
-import numpy as np
-import psutil
-import threading
 import math
 import tf2_ros
-from datetime import datetime
-
-from sensor_msgs.msg import Joy, Imu, JointState
+import numpy as np
+from sensor_msgs.msg import Joy, Imu
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import TransformStamped, Quaternion
+from geometry_msgs.msg import TransformStamped, Quaternion, Twist
 from RobotController import RobotController
 from InverseKinematics import robot_IK
-from std_msgs.msg import Float64, String, Float64MultiArray
+from std_msgs.msg import Float64
 
-# Configuration
 USE_IMU = True
 RATE = 60
-DEBUG_PRINT_INTERVAL = 30  # Print debug info every X iterations
-TARGET_LOOP_TIME = 1.0/RATE  # Store this for later use
-LOG_TO_FILE = True  # Set to True to log to file
-LOG_FILE_PATH = os.path.expanduser("~/2425-EE5109/MiniProject/catkin_ws/logs/")
 
-# System stats tracking
-system_stats = {
-    'cpu_percent': 0,
-    'memory_percent': 0,
-    'loop_time_stats': {
-        'last_100': []
-    }
-}
-
-# Initialize ROS node
 rospy.init_node("Robot_Controller")
-rospy.loginfo("Starting NotSpot Robot Controller with enhanced debugging and odometry")
-
-# Create log directory if it doesn't exist
-if LOG_TO_FILE:
-    try:
-        if not os.path.exists(LOG_FILE_PATH):
-            os.makedirs(LOG_FILE_PATH)
-        log_file_name = f"{LOG_FILE_PATH}notspot_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        log_file = open(log_file_name, 'w')
-        log_file.write("timestamp,controller,dx,dy,dz,roll,pitch,yaw,imu_roll,imu_pitch,roll_error,pitch_error,")
-        log_file.write("fr_height,fl_height,rr_height,rl_height,loop_time,cpu_percent,memory_percent,")
-        log_file.write("odom_x,odom_y,odom_yaw,vel_x,vel_y,yaw_rate\n")  # Added odometry data to log
-        rospy.loginfo(f"Logging data to {log_file_name}")
-    except Exception as e:
-        rospy.logwarn(f"Failed to create log file: {str(e)}")
-        LOG_TO_FILE = False
 
 # Robot geometry
 body = [0.1908, 0.080]
 legs = [0.0, 0.04, 0.100, 0.094333] 
 
-# Initialize robot and inverse kinematics
 notspot_robot = RobotController.Robot(body, legs, USE_IMU)
 inverseKinematics = robot_IK.InverseKinematics(body, legs)
 
-# Setup debug publisher
-debug_pub = rospy.Publisher("/notspot_debug", String, queue_size=10)
-
-# Setup performance monitoring publisher
-perf_pub = rospy.Publisher("/notspot_controller/performance", Float64MultiArray, queue_size=10)
-
-# Add odometry publisher and tf broadcaster
-odom_pub = rospy.Publisher('odom', Odometry, queue_size=50)
-tf_broadcaster = tf2_ros.TransformBroadcaster()
-
-# Initialize odometry message
-odom = Odometry()
-odom.header.frame_id = "odom"
-odom.child_frame_id = "base_link"
-
-# Odometry estimation variables
-x_pos = 0.0
-y_pos = 0.0
-yaw = 0.0
-last_time = rospy.Time.now()
-prev_foot_positions = None
-
-# Additional position tracking in the map frame
-map_x = 0.0
-map_y = 0.0
-map_yaw = 0.0
-
-# Setup joint command publishers
 command_topics = ["/notspot_controller/FR1_joint/command",
                   "/notspot_controller/FR2_joint/command",
                   "/notspot_controller/FR3_joint/command",
@@ -111,37 +39,58 @@ command_topics = ["/notspot_controller/FR1_joint/command",
 
 publishers = []
 for i in range(len(command_topics)):
-    publishers.append(rospy.Publisher(command_topics[i], Float64, queue_size=0))
+    publishers.append(rospy.Publisher(command_topics[i], Float64, queue_size = 0))
 
-# Set up subscribers
+# Add odometry publisher and tf broadcaster
+odom_pub = rospy.Publisher('odom', Odometry, queue_size=50)
+tf_broadcaster = tf2_ros.TransformBroadcaster()
+
+# Initialize odometry message
+odom = Odometry()
+odom.header.frame_id = "odom"
+odom.child_frame_id = "base_link"
+
+# Set covariance matrices - important for SLAM
+# Diagonal values represent uncertainty in x, y, z, roll, pitch, yaw
+position_covariance_diagonal = [0.01, 0.01, 0.01, 0.03, 0.03, 0.01]  # Lower values = higher confidence
+twist_covariance_diagonal = [0.01, 0.01, 0.01, 0.05, 0.05, 0.01]
+
+# Fill position covariance (6x6 matrix)
+for i in range(6):
+    odom.pose.covariance[i*6+i] = position_covariance_diagonal[i]
+    odom.twist.covariance[i*6+i] = twist_covariance_diagonal[i]
+
+# Odometry estimation variables
+x_pos = 0.0
+y_pos = 0.0
+yaw = 0.0
+last_time = rospy.Time.now()
+prev_leg_positions = None
+prev_time = rospy.Time.now()
+
+# Velocity filtering variables
+vel_x_filter = 0.0
+vel_y_filter = 0.0
+yaw_rate_filter = 0.0
+filter_alpha = 0.7  # Filtering coefficient (higher = more responsive)
+
+# Initialize velocity measurement
+last_vel_x = 0.0
+last_vel_y = 0.0
+last_yaw_rate = 0.0
+
 if USE_IMU:
-    rospy.loginfo("Subscribing to IMU data on topic: notspot_imu/base_link_orientation")
     rospy.Subscriber("notspot_imu/base_link_orientation", Imu, notspot_robot.imu_orientation)
-else:
-    rospy.logwarn("IMU is disabled - robot will not use orientation feedback")
-
 rospy.Subscriber("notspot_joy/joy_ramped", Joy, notspot_robot.joystick_command)
 
-# Global joint state data
-joint_states = None
-def joint_state_callback(msg):
-    global joint_states
-    joint_states = msg
-rospy.Subscriber("/joint_states", JointState, joint_state_callback)
-
-# Setup control loop rate
 rate = rospy.Rate(RATE)
-rospy.loginfo(f"Control loop will run at {RATE}Hz")
 
-# Initialize debug variables
-debug_loop_counter = 0
-start_time = time.time()
-total_iterations = 0
-min_loop_time = float('inf')
-max_loop_time = 0
-total_loop_time = 0
+del body
+del legs
+del command_topics
+del USE_IMU
+del RATE
 
-# Function to convert Euler angles to quaternion
 def get_quaternion_from_euler(roll, pitch, yaw):
     """
     Convert Euler angles to quaternion
@@ -152,219 +101,161 @@ def get_quaternion_from_euler(roll, pitch, yaw):
     qw = np.cos(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
     return [qx, qy, qz, qw]
 
-# Function to publish debug data
-def publish_debug_info(info_str):
-    msg = String()
-    msg.data = info_str
-    debug_pub.publish(msg)
+# Function to normalize angle to [-pi, pi]
+def normalize_angle(angle):
+    while angle > math.pi:
+        angle -= 2.0 * math.pi
+    while angle < -math.pi:
+        angle += 2.0 * math.pi
+    return angle
 
-# Function to publish performance data
-def publish_performance_data(commanded_angles, actual_angles=None, control_effort=None):
-    msg = Float64MultiArray()
-    data = list(commanded_angles)
-    
-    if actual_angles is not None:
-        data += list(actual_angles)
-    
-    if control_effort is not None:
-        data += list(control_effort)
-    
-    msg.data = data
-    perf_pub.publish(msg)
-
-# Function to monitor system resources in a separate thread
-def monitor_system_resources():
-    process = psutil.Process(os.getpid())
-    while not rospy.is_shutdown():
-        try:
-            system_stats['cpu_percent'] = process.cpu_percent(interval=1.0)
-            system_stats['memory_percent'] = process.memory_percent()
-        except Exception as e:
-            rospy.logwarn(f"Error monitoring system resources: {str(e)}")
+# Function to estimate velocity from leg movements (leg odometry)
+def estimate_velocity_from_legs(current_leg_positions, prev_leg_positions, dt):
+    if prev_leg_positions is None or dt <= 0:
+        return 0.0, 0.0
         
-        # Sleep to avoid excessive CPU usage
-        time.sleep(5)  # Update every 5 seconds
-
-# Start resource monitoring thread
-resource_thread = threading.Thread(target=monitor_system_resources)
-resource_thread.daemon = True
-resource_thread.start()
-
-# Function to create a visual state representation
-def publish_state_visualization(state, command, odom_x=0, odom_y=0, odom_yaw=0):
-    # Create a more visual state representation
-    state_str = [
-        "╔══════════════ NOTSPOT STATE ══════════════╗",
-        f"║ Mode: {state.behavior_state.name:<36} ║",
-        f"║ Controller: {notspot_robot.currentController.__class__.__name__:<30} ║",
-        "╠══════════ BODY POSITION/ORIENTATION ══════╣",
-        f"║ Position: x={state.body_local_position[0]:+7.4f}, y={state.body_local_position[1]:+7.4f}, z={state.body_local_position[2]:+7.4f} ║",
-        f"║ Orientation: r={state.body_local_orientation[0]:+7.4f}, p={state.body_local_orientation[1]:+7.4f}, y={state.body_local_orientation[2]:+7.4f} ║"
-    ]
+    # Calculate delta position for each leg that's in stance phase
+    # (This is a simplified approach - a more sophisticated approach would track
+    # which legs are in stance vs. swing phase)
+    delta_positions = []
     
-    # Add odometry data
-    state_str.append("╠═════════════════ ODOMETRY ═════════════════╣")
-    state_str.append(f"║ Position: x={odom_x:+7.4f}, y={odom_y:+7.4f}, yaw={odom_yaw:+7.4f}        ║")
-    
-    # Add IMU data if available
-    if hasattr(state, 'imu_roll') and hasattr(state, 'imu_pitch'):
-        state_str.append("╠═════════════════ IMU DATA ═════════════════╣")
-        state_str.append(f"║ IMU Angles: r={state.imu_roll:+7.4f}, p={state.imu_pitch:+7.4f}             ║")
+    # Calculate average movement of all legs
+    for i in range(len(current_leg_positions)):
+        # Calculate delta for this leg
+        delta_x = current_leg_positions[i][0] - prev_leg_positions[i][0]
+        delta_y = current_leg_positions[i][1] - prev_leg_positions[i][1]
         
-        if hasattr(notspot_robot, 'currentController') and hasattr(notspot_robot.currentController, 'use_imu'):
-            imu_status = "ENABLED" if notspot_robot.currentController.use_imu else "DISABLED"
-            controller = "LQR" if (hasattr(notspot_robot.currentController, 'use_lqr') and 
-                                 notspot_robot.currentController.use_lqr) else "PID"
-            state_str.append(f"║ Stabilization: {imu_status}, Controller: {controller}       ║")
+        # Only include significant movements (filter out noise)
+        if abs(delta_x) + abs(delta_y) < 0.001:
+            delta_positions.append((-delta_x, -delta_y))  # Negative because leg movement is opposite to body
     
-    # Command data
-    state_str.append("╠═════════════════ COMMANDS ═════════════════╣")
-    state_str.append(f"║ Velocity: x={command.velocity[0]:+7.4f}, y={command.velocity[1]:+7.4f}, yaw={command.yaw_rate:+7.4f} ║")
-    
-    # Add foot position data
-    if hasattr(state, 'foot_locations'):
-        state_str.append("╠════════════════ FOOT STATUS ════════════════╣")
-        labels = ["FR", "FL", "RR", "RL"]
-        for i in range(4):
-            x, y, z = state.foot_locations[0, i], state.foot_locations[1, i], state.foot_locations[2, i]
-            state_str.append(f"║ {labels[i]}: x={x:+7.4f}, y={y:+7.4f}, z={z:+7.4f}          ║")
-    
-    # System stats
-    state_str.append("╠═════════════════ SYSTEM STATS ══════════════╣")
-    avg_loop_time = np.mean(system_stats['loop_time_stats']['last_100']) if system_stats['loop_time_stats']['last_100'] else 0
-    max_loop_time = max(system_stats['loop_time_stats']['last_100']) if system_stats['loop_time_stats']['last_100'] else 0
-    state_str.append(f"║ CPU: {system_stats['cpu_percent']:5.1f}%, Loop: {avg_loop_time:5.2f}ms (max: {max_loop_time:5.2f}ms) ║")
-    
-    state_str.append("╚═══════════════════════════════════════════════╝")
-    
-    viz_msg = String()
-    viz_msg.data = "\n".join(state_str)
-    debug_pub.publish(viz_msg)
+    if len(delta_positions) > 0:
+        avg_delta_x = sum(d[0] for d in delta_positions) / len(delta_positions)
+        avg_delta_y = sum(d[1] for d in delta_positions) / len(delta_positions)
+        
+        # Convert to velocity
+        vel_x_legs = avg_delta_x / dt
+        vel_y_legs = avg_delta_y / dt
+        
+        return vel_x_legs, vel_y_legs
+    else:
+        return 0.0, 0.0
 
-# Function to log data to CSV file
-def log_data_to_file(timestamp, controller, dx, dy, dz, roll, pitch, yaw, 
-                    imu_roll, imu_pitch, roll_error, pitch_error,
-                    fr_height, fl_height, rr_height, rl_height, loop_time,
-                    odom_x=0, odom_y=0, odom_yaw=0, vel_x=0, vel_y=0, yaw_rate=0):
-    if not LOG_TO_FILE:
-        return
-    
-    try:
-        log_file.write(f"{timestamp},{controller},{dx},{dy},{dz},{roll},{pitch},{yaw},")
-        log_file.write(f"{imu_roll},{imu_pitch},{roll_error},{pitch_error},")
-        log_file.write(f"{fr_height},{fl_height},{rr_height},{rl_height},{loop_time},")
-        log_file.write(f"{system_stats['cpu_percent']},{system_stats['memory_percent']},")
-        log_file.write(f"{odom_x},{odom_y},{odom_yaw},{vel_x},{vel_y},{yaw_rate}\n")
-        log_file.flush()  # Ensure data is written immediately
-    except Exception as e:
-        rospy.logwarn(f"Failed to write to log file: {str(e)}")
-
-# Cleanup to save memory
-del command_topics
-# Don't delete RATE since we need it later
-del USE_IMU
-
-# Main control loop
-rospy.loginfo("Entering main control loop")
 while not rospy.is_shutdown():
-    loop_start_time = time.time()
-    
-    # Run robot controller
     leg_positions = notspot_robot.run()
     notspot_robot.change_controller()
 
-    # Get robot state
     dx = notspot_robot.state.body_local_position[0]
     dy = notspot_robot.state.body_local_position[1]
     dz = notspot_robot.state.body_local_position[2]
     
     roll = notspot_robot.state.body_local_orientation[0]
     pitch = notspot_robot.state.body_local_orientation[1]
-    yaw_local = notspot_robot.state.body_local_orientation[2]
+    yaw_local = notspot_robot.state.body_local_orientation[2]  # Local yaw
+
+    try:
+        joint_angles = inverseKinematics.inverse_kinematics(leg_positions,
+                               dx, dy, dz, roll, pitch, yaw_local)
+
+        for i in range(len(joint_angles)):
+            publishers[i].publish(joint_angles[i])
+    except Exception as e:
+        rospy.logwarn(f"IK calculation error: {e}")
     
-    # Odometry update
+    # Publish odometry data
     current_time = rospy.Time.now()
     dt = (current_time - last_time).to_sec()
+    
+    if dt <= 0:
+        rate.sleep()
+        continue
+        
     last_time = current_time
     
-    # Estimate velocity from command inputs
+    # Multi-source velocity estimation with sensor fusion
     vel_x = 0.0
     vel_y = 0.0
     yaw_rate = 0.0
     
-    # Get velocity from controller if available
+    # 1. Get velocity from command (with scaling by max velocity)
     if hasattr(notspot_robot.command, 'horizontal_velocity') and hasattr(notspot_robot.command, 'vertical_velocity'):
-        # Use velocity directly from command
-        # Access max velocities from the trot controller
-        if hasattr(notspot_robot, 'trotGaitController'):
-            max_x_velocity = notspot_robot.trotGaitController.max_x_velocity
-            max_y_velocity = notspot_robot.trotGaitController.max_y_velocity
-            vel_x = notspot_robot.command.horizontal_velocity * max_x_velocity  # Scale by max velocity
-            vel_y = notspot_robot.command.vertical_velocity * max_y_velocity    # Scale by max velocity
-        else:
-            # Fallback if trotGaitController is not available
-            vel_x = notspot_robot.command.horizontal_velocity
-            vel_y = notspot_robot.command.vertical_velocity
-            
-        yaw_rate = notspot_robot.command.yaw_rate
-
-        # Update map position based on these velocities
-        map_x += (vel_x * np.cos(map_yaw) - vel_y * np.sin(map_yaw)) * dt
-        map_y += (vel_x * np.sin(map_yaw) + vel_y * np.cos(map_yaw)) * dt
-        map_yaw += yaw_rate * dt
+        max_x_velocity = notspot_robot.trotGaitController.max_x_velocity if hasattr(notspot_robot, 'trotGaitController') else 0.5
+        max_y_velocity = notspot_robot.trotGaitController.max_y_velocity if hasattr(notspot_robot, 'trotGaitController') else 0.5
+        
+        vel_x_cmd = notspot_robot.command.horizontal_velocity * max_x_velocity
+        vel_y_cmd = notspot_robot.command.vertical_velocity * max_y_velocity
+        yaw_rate_cmd = notspot_robot.command.yaw_rate if hasattr(notspot_robot.command, 'yaw_rate') else 0.0
     else:
-        # Fallback to estimating velocity from foot positions change
-        if prev_foot_positions is not None and hasattr(notspot_robot.state, 'behavior_state') and notspot_robot.state.behavior_state == 2:  # Check if in trot mode
-            # Calculate average foot movement
-            delta_pos = np.mean(leg_positions - prev_foot_positions, axis=1)
-            vel_x = delta_pos[0] / dt
-            vel_y = delta_pos[1] / dt
+        vel_x_cmd = 0.0
+        vel_y_cmd = 0.0
+        yaw_rate_cmd = 0.0
+    
+    # 2. Get velocity from leg odometry (actual leg movements)
+    vel_x_legs, vel_y_legs = 0.0, 0.0
+    if prev_leg_positions is not None and leg_positions is not None:
+        vel_x_legs, vel_y_legs = estimate_velocity_from_legs(leg_positions, prev_leg_positions, dt)
+    
+    # 3. Fuse velocity estimates with weight factors
+    # In trot mode, use a mix of command and leg odometry
+    if hasattr(notspot_robot.state, 'behavior_state') and notspot_robot.state.behavior_state == 2:  # Trot mode
+        # Give more weight to leg odometry when we have it
+        if abs(vel_x_legs) > 0.001 or abs(vel_y_legs) > 0.001:
+            vel_x = 0.6 * vel_x_legs + 0.4 * vel_x_cmd
+            vel_y = 0.6 * vel_y_legs + 0.4 * vel_y_cmd
         else:
-            vel_x = 0.0
-            vel_y = 0.0
-    
-    # Estimate yaw rate from command
-    if hasattr(notspot_robot.command, 'yaw_rate'):
-        yaw_rate = notspot_robot.command.yaw_rate
+            # Fall back to command velocity if leg odometry is not reliable
+            vel_x = vel_x_cmd
+            vel_y = vel_y_cmd
     else:
-        # Could improve this with IMU data if available
-        yaw_rate = 0.0
+        # In other modes (like rest), rely mostly on command
+        vel_x = vel_x_cmd
+        vel_y = vel_y_cmd
     
-    # Integrate velocity to get position
-    # Convert to world frame using the current yaw angle
-    x_pos += (vel_x * np.cos(yaw) - vel_y * np.sin(yaw)) * dt
-    y_pos += (vel_x * np.sin(yaw) + vel_y * np.cos(yaw)) * dt
-    yaw += yaw_rate * dt
+    yaw_rate = yaw_rate_cmd  # Use command yaw rate (could enhance with IMU)
     
-    # Save foot positions for next iteration
-    prev_foot_positions = leg_positions.copy() if leg_positions is not None else None
+    # Apply low-pass filter to velocities for smoother estimation
+    vel_x_filter = filter_alpha * vel_x + (1 - filter_alpha) * last_vel_x
+    vel_y_filter = filter_alpha * vel_y + (1 - filter_alpha) * last_vel_y
+    yaw_rate_filter = filter_alpha * yaw_rate + (1 - filter_alpha) * last_yaw_rate
     
-    # Use IMU for orientation if available, otherwise use integrated yaw
-    imu_roll = 0
-    imu_pitch = 0
-    imu_roll_error = 0
-    imu_pitch_error = 0
+    last_vel_x = vel_x_filter
+    last_vel_y = vel_y_filter
+    last_yaw_rate = yaw_rate_filter
     
+    # Update robot orientation - using IMU when available
     if hasattr(notspot_robot.state, 'imu_roll') and hasattr(notspot_robot.state, 'imu_pitch'):
-        imu_roll = notspot_robot.state.imu_roll
-        imu_pitch = notspot_robot.state.imu_pitch
+        roll = notspot_robot.state.imu_roll
+        pitch = notspot_robot.state.imu_pitch
         
-        # Calculate difference between commanded and measured orientation
-        imu_roll_error = roll - imu_roll
-        imu_pitch_error = pitch - imu_pitch
-        
-        # Use IMU values for odometry orientation
-        odom_roll = imu_roll
-        odom_pitch = imu_pitch
-        # Note: We don't have IMU yaw, so we use the integrated yaw
-        odom_yaw = yaw
+        # If we have IMU yaw, use it for better accuracy
+        if hasattr(notspot_robot.state, 'imu_yaw'):
+            # IMU yaw might need an offset to align with world frame
+            yaw = notspot_robot.state.imu_yaw
+        else:
+            # Integrate yaw rate to get yaw angle
+            yaw += yaw_rate_filter * dt
+            yaw = normalize_angle(yaw)
     else:
-        odom_roll = roll
-        odom_pitch = pitch
-        odom_yaw = yaw
+        # No IMU, use simple integration
+        roll = 0.0
+        pitch = 0.0
+        yaw += yaw_rate_filter * dt
+        yaw = normalize_angle(yaw)
+    
+    # Integrate velocity (in robot frame) to position (in world frame)
+    # Convert robot-frame velocity to world-frame using current yaw
+    world_vel_x = vel_x_filter * math.cos(yaw) - vel_y_filter * math.sin(yaw)
+    world_vel_y = vel_x_filter * math.sin(yaw) + vel_y_filter * math.cos(yaw)
+    
+    # Update position
+    x_pos += world_vel_x * dt
+    y_pos += world_vel_y * dt
+    
+    # Save leg positions for next iteration
+    prev_leg_positions = leg_positions.copy() if leg_positions is not None else None
     
     # Get quaternion from roll, pitch, yaw
-    quaternion = get_quaternion_from_euler(odom_roll, odom_pitch, odom_yaw)
+    quaternion = get_quaternion_from_euler(roll, pitch, yaw)
     
     # Update odometry message
     odom.header.stamp = current_time
@@ -375,9 +266,18 @@ while not rospy.is_shutdown():
     odom.pose.pose.orientation.y = quaternion[1]
     odom.pose.pose.orientation.z = quaternion[2]
     odom.pose.pose.orientation.w = quaternion[3]
-    odom.twist.twist.linear.x = vel_x
-    odom.twist.twist.linear.y = vel_y
-    odom.twist.twist.angular.z = yaw_rate
+    
+    # Set velocities in the robot's frame (not the world frame)
+    odom.twist.twist.linear.x = vel_x_filter
+    odom.twist.twist.linear.y = vel_y_filter
+    odom.twist.twist.angular.z = yaw_rate_filter
+    
+    # Adjust covariance based on motion state
+    # Higher uncertainty when robot is moving faster
+    motion_factor = math.sqrt(vel_x_filter**2 + vel_y_filter**2 + yaw_rate_filter**2) + 1.0
+    for i in range(6):
+        odom.pose.covariance[i*6+i] = position_covariance_diagonal[i] * motion_factor
+        odom.twist.covariance[i*6+i] = twist_covariance_diagonal[i] * motion_factor
     
     # Publish odometry
     odom_pub.publish(odom)
@@ -395,136 +295,5 @@ while not rospy.is_shutdown():
     transform.transform.rotation.z = quaternion[2]
     transform.transform.rotation.w = quaternion[3]
     tf_broadcaster.sendTransform(transform)
-    
-    # Debug prints
-    debug_loop_counter += 1
-    if debug_loop_counter % DEBUG_PRINT_INTERVAL == 0:
-        controller_type = notspot_robot.currentController.__class__.__name__
-        controller_type_str = f"{controller_type}"
-        if hasattr(notspot_robot.currentController, 'use_lqr'):
-            controller_type_str += f" ({'LQR' if notspot_robot.currentController.use_lqr else 'PID'})"
-        
-        rospy.loginfo(f"Controller: {controller_type_str}")
-        rospy.loginfo(f"Body position: dx={dx:.4f}, dy={dy:.4f}, dz={dz:.4f}")
-        rospy.loginfo(f"Body orientation: roll={roll:.4f}, pitch={pitch:.4f}, yaw={yaw_local:.4f}")
-        
-        # Log IMU data if available
-        if hasattr(notspot_robot.state, 'imu_roll') and hasattr(notspot_robot.state, 'imu_pitch'):
-            rospy.loginfo(f"IMU orientation: roll={imu_roll:.4f}, pitch={imu_pitch:.4f}")
-            rospy.loginfo(f"Orientation error: roll_error={imu_roll_error:.4f}, pitch_error={imu_pitch_error:.4f}")
-        
-        # Log odometry data
-        rospy.loginfo(f"Odometry: x={x_pos:.4f}, y={y_pos:.4f}, yaw={yaw:.4f}")
-        rospy.loginfo(f"Velocity: vx={vel_x:.4f}, vy={vel_y:.4f}, yaw_rate={yaw_rate:.4f}")
-        
-        # Debug output for foot positions
-        foot_heights = leg_positions[2, :]
-        rospy.loginfo(f"Foot heights: FR={foot_heights[0]:.4f}, FL={foot_heights[1]:.4f}, RR={foot_heights[2]:.4f}, RL={foot_heights[3]:.4f}")
-        
-        # Log to file if enabled
-        current_timestamp = time.time() - start_time
-        log_data_to_file(
-            current_timestamp, controller_type_str, 
-            dx, dy, dz, roll, pitch, yaw_local,
-            imu_roll, imu_pitch, imu_roll_error, imu_pitch_error,
-            foot_heights[0], foot_heights[1], foot_heights[2], foot_heights[3],
-            loop_end_time - loop_start_time if 'loop_end_time' in locals() else 0,
-            x_pos, y_pos, yaw, vel_x, vel_y, yaw_rate  # Added odometry data
-        )
-        
-        # Publish comprehensive debug info
-        debug_str = (
-            f"Time: {time.time() - start_time:.2f}s\n"
-            f"Controller: {controller_type_str}\n"
-            f"Body: dx={dx:.4f}, dy={dy:.4f}, dz={dz:.4f}\n"
-            f"Angles: r={roll:.4f}, p={pitch:.4f}, y={yaw_local:.4f}\n"
-        )
-        
-        if hasattr(notspot_robot.state, 'imu_roll') and hasattr(notspot_robot.state, 'imu_pitch'):
-            debug_str += f"IMU: r={notspot_robot.state.imu_roll:.4f}, p={notspot_robot.state.imu_pitch:.4f}\n"
-            debug_str += f"Error: r_err={imu_roll_error:.4f}, p_err={imu_pitch_error:.4f}\n"
-        
-        debug_str += f"Odom: x={x_pos:.4f}, y={y_pos:.4f}, yaw={yaw:.4f}\n"
-        debug_str += f"Vel: vx={vel_x:.4f}, vy={vel_y:.4f}, yaw_rate={yaw_rate:.4f}\n"
-        
-        debug_str += f"Foot heights: FR={foot_heights[0]:.4f}, FL={foot_heights[1]:.4f}, "
-        debug_str += f"RR={foot_heights[2]:.4f}, RL={foot_heights[3]:.4f}\n"
-        
-        # System stats
-        if system_stats['loop_time_stats']['last_100']:
-            avg_loop = np.mean(system_stats['loop_time_stats']['last_100']) * 1000  # Convert to ms
-            debug_str += f"System: CPU={system_stats['cpu_percent']:.1f}%, Mem={system_stats['memory_percent']:.1f}%, "
-            debug_str += f"Loop={avg_loop:.2f}ms\n"
-        
-        publish_debug_info(debug_str)
-    
-    # Publish visual state representation every X iterations
-    if debug_loop_counter % (DEBUG_PRINT_INTERVAL * 2) == 0:
-        publish_state_visualization(notspot_robot.state, notspot_robot.command, x_pos, y_pos, yaw)
-    
-    # Compute inverse kinematics
-    try:
-        joint_angles = inverseKinematics.inverse_kinematics(leg_positions,
-                              dx, dy, dz, roll, pitch, yaw_local)
 
-        # Get actual joint positions if available
-        actual_joint_positions = None
-        if joint_states is not None:
-            actual_joint_positions = list(joint_states.position)
-            
-            # Calculate tracking error metrics if data is available
-            if debug_loop_counter % (DEBUG_PRINT_INTERVAL * 5) == 0 and len(actual_joint_positions) == len(joint_angles):
-                errors = [abs(joint_angles[i] - actual_joint_positions[i]) for i in range(len(joint_angles))]
-                max_error = max(errors)
-                avg_error = sum(errors) / len(errors)
-                rospy.loginfo(f"Joint tracking - Max error: {max_error:.4f} rad, Avg error: {avg_error:.4f} rad")
-        
-        # Publish performance data
-        publish_performance_data(joint_angles, actual_joint_positions)
-
-        # Publish joint commands
-        for i in range(len(joint_angles)):
-            publishers[i].publish(joint_angles[i])
-            
-        # Debug joint angles occasionally
-        if debug_loop_counter % (DEBUG_PRINT_INTERVAL * 10) == 0:  # Less frequent
-            rospy.loginfo(f"Joint angles sample: {joint_angles[0:3]}")
-            
-    except Exception as e:
-        rospy.logwarn(f"Inverse kinematics error: {str(e)}")
-        pass
-    
-    # Calculate loop statistics
-    loop_end_time = time.time()
-    loop_duration = loop_end_time - loop_start_time
-    
-    # Update loop time stats
-    total_iterations += 1
-    min_loop_time = min(min_loop_time, loop_duration)
-    max_loop_time = max(max_loop_time, loop_duration)
-    total_loop_time += loop_duration
-    
-    # Store loop time in rolling window
-    system_stats['loop_time_stats']['last_100'].append(loop_duration)
-    if len(system_stats['loop_time_stats']['last_100']) > 100:
-        system_stats['loop_time_stats']['last_100'].pop(0)
-    
-    # Print loop timing statistics periodically
-    if debug_loop_counter % (DEBUG_PRINT_INTERVAL * 5) == 0:
-        avg_loop_time = total_loop_time / total_iterations
-        rospy.loginfo(f"Control loop timing - Current: {loop_duration*1000:.2f}ms, Avg: {avg_loop_time*1000:.2f}ms, Min: {min_loop_time*1000:.2f}ms, Max: {max_loop_time*1000:.2f}ms")
-        
-        # Check if we're meeting timing requirements
-        if loop_duration > TARGET_LOOP_TIME:
-            rospy.logwarn(f"Control loop took {loop_duration*1000:.2f}ms (target: {TARGET_LOOP_TIME*1000:.2f}ms) - May not be meeting real-time requirements")
-    
-    # Maintain loop rate
     rate.sleep()
-
-# Clean up resources
-if LOG_TO_FILE:
-    try:
-        log_file.close()
-        rospy.loginfo(f"Log file closed: {log_file_name}")
-    except:
-        pass
