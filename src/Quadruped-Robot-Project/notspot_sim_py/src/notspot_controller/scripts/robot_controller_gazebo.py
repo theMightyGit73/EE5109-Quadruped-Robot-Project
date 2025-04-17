@@ -30,7 +30,7 @@ RATE = 60
 DEBUG_PRINT_INTERVAL = 30  # Print debug info every X iterations
 TARGET_LOOP_TIME = 1.0/RATE  # Store this for later use
 LOG_TO_FILE = True  # Set to True to log to file
-LOG_FILE_PATH = "/tmp/notspot_logs/"
+LOG_FILE_PATH = os.path.expanduser("~/2425-EE5109/MiniProject/catkin_ws/logs/")
 
 # System stats tracking
 system_stats = {
