@@ -1,0 +1,23 @@
+<launch>
+
+    <param name="use_sim_time" value="true"/>
+
+    <arg name="robot" default="$(find notspot_description)/urdf/notspot.urdf"/>
+    <param name="robot_description"
+         command="$(find xacro)/xacro --inorder $(arg robot)" />
+
+    <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_camera" 
+          args="0.13 0 0.005 0 0 0 base_link camera_link_optical"/>
+
+    <node pkg="joint_state_publisher_gui"
+         type="joint_state_publisher_gui" name="joint_state_publisher_gui"/>
+
+    <node pkg="robot_state_publisher"
+         type="robot_state_publisher" name="robot_state_publisher">
+        <param name="publish_frequency" type="double" value="1000.0"/>
+    </node>
+
+    <node pkg="rviz" type="rviz" name="rviz" respawn="false" output="screen"
+          args="-d $(find notspot_description)/launch/notspot_rviz.rviz"/>
+
+</launch>

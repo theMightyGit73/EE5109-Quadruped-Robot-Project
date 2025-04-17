@@ -1,0 +1,19 @@
+<launch>
+
+    <param name="use_sim_time" value="true" />
+
+    <!-- Gazebo Simulation -->
+    <include file="$(find notspot_gazebo)/launch/simulation.launch" />
+
+    <!-- Joystick -->
+    <!-- <include file="$(find notspot_joystick)/launch/ramped_keyboard.launch" /> -->
+
+    <!-- Robot Controller -->
+    <include 
+        file="$(find notspot_controller)/launch/robot_controller.launch"/>
+
+    <!-- Rviz -->
+    <!-- <node name="rviz" pkg="rviz" type="rviz" output="screen"
+        args="-d $(find notspot_description)/rviz_configs/my_rviz_config.rviz"/> -->
+
+</launch>

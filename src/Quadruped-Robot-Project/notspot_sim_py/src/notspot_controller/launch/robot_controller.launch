@@ -1,0 +1,8 @@
+<launch>
+    <param name="use_sim_time" value="true"/>
+
+    <!-- Robot controller -->
+    <node pkg="notspot_controller" type="robot_controller_gazebo.py"
+        name="ROBOT_CONTROLLER" output="screen"/>
+
+</launch>

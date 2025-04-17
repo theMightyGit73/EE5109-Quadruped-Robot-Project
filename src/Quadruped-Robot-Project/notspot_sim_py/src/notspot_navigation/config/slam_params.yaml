@@ -1,0 +1,14 @@
+use_scan_matching: true
+use_scan_barycenter: true
+map_update_interval: 2.0
+minimum_time_interval: 0.2
+max_laser_range: 15.0
+minimum_score_threshold: 100.0
+transform_publish_period: 0.05
+mode: mapping
+
+angle_min: -3.14
+angle_max: 3.14
+angle_increment: 0.070561796
+range_min: 0.2
+range_max: 15.0

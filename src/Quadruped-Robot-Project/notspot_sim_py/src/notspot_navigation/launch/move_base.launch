@@ -1,0 +1,15 @@
+<launch>
+  <param name="use_sim_time" value="true" />
+
+  <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+    <rosparam file="$(find notspot_navigation)/config/costmap_common_params.yaml" command="load" ns="global_costmap" />
+    <rosparam file="$(find notspot_navigation)/config/costmap_common_params.yaml" command="load" ns="local_costmap" />
+    <rosparam file="$(find notspot_navigation)/config/local_costmap_params.yaml" command="load" />
+    <rosparam file="$(find notspot_navigation)/config/global_costmap_params.yaml" command="load" />
+    <rosparam file="$(find notspot_navigation)/config/base_local_planner_params.yaml" command="load" />
+
+    <!-- Remap topics -->
+    <remap from="cmd_vel" to="/notspot/cmd_vel"/>
+    <remap from="odom" to="/notspot/odometry"/>
+  </node>
+</launch>
