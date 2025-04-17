@@ -1,29 +1,9 @@
-# ROS specific ignores
 build/
 devel/
 .catkin_workspace
-.catkin_tools/
-logs/
-log/
-
-# Generated files
 *.pyc
 __pycache__/
 *.so
-*.dylib
-*.dll
-
-# IDE files
-.idea/
-*.swp
-*.swo
 .vscode/
-
-# OS specific files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+*.swp
+*~
