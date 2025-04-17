@@ -1,9 +1,19 @@
+# Catkin build/devel spaces
 build/
 devel/
-.catkin_workspace
+logs/
+install/
+
+# Python temp files
 *.pyc
 __pycache__/
-*.so
-.vscode/
-*.swp
+
+# Backup & Temp files
 *~
+*.swp
+.DS_Store
+
+# Catkin Tools state
+.catkin_tools/
+
+# Add any other specific files/directories you want to ignore below
