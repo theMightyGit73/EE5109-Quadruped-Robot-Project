@@ -645,20 +645,21 @@ class Robot(object):
         
         self.last_imu_time = current_time
         self.imu_debug_counter += 1
-        def update_foot_position_history(self, positions):
-            """Track foot position history for diagnostics"""
-            if positions.shape != (3, 4):
-                return
-            
-            # Store current positions
-            labels = ["FR", "FL", "RR", "RL"]
-            for i, label in enumerate(labels):
-                self.foot_position_history[label].append({
-                    'x': positions[0, i],
-                    'y': positions[1, i],
-                    'z': positions[2, i],
-                    'timestamp': time.time()
-                })
+        
+    def update_foot_position_history(self, positions):
+        """Track foot position history for diagnostics"""
+        if positions.shape != (3, 4):
+            return
+        
+        # Store current positions
+        labels = ["FR", "FL", "RR", "RL"]
+        for i, label in enumerate(labels):
+            self.foot_position_history[label].append({
+                'x': positions[0, i],
+                'y': positions[1, i],
+                'z': positions[2, i],
+                'timestamp': time.time()
+            })
 
     def run(self):
         # Collect performance data

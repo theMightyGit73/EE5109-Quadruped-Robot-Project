@@ -3,6 +3,9 @@ build/
 devel/
 logs/
 install/
+# Generated logs and data
+logs/
+data/
 
 # Python temp files
 *.pyc
