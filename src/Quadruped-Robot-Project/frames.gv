@@ -1,0 +1,27 @@
+digraph G {
+"FL3" -> "FL4"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"FL2" -> "FL3"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 9.796\nBuffer length: 4.9\nMost recent transform: 529.694\nOldest transform: 524.794\n"];
+"FR3" -> "FR4"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"FR2" -> "FR3"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 9.796\nBuffer length: 4.9\nMost recent transform: 529.694\nOldest transform: 524.794\n"];
+"RL3" -> "RL4"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"RL2" -> "RL3"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 9.796\nBuffer length: 4.9\nMost recent transform: 529.694\nOldest transform: 524.794\n"];
+"RR3" -> "RR4"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"RR2" -> "RR3"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 9.796\nBuffer length: 4.9\nMost recent transform: 529.694\nOldest transform: 524.794\n"];
+"base_link" -> "camera_link"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"odom" -> "base_link"[label=" Broadcaster: /ROBOT_CONTROLLER\nAverage rate: 60.209\nBuffer length: 4.966\nMost recent transform: 529.735\nOldest transform: 524.769\n"];
+"camera_link" -> "camera_link_optical"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "laser_frame"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"map" -> "odom"[label=" Broadcaster: /amcl\nAverage rate: 5.202\nBuffer length: 4.806\nMost recent transform: 529.751\nOldest transform: 524.945\n"];
+"base_link" -> "FL1"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 9.796\nBuffer length: 4.9\nMost recent transform: 529.694\nOldest transform: 524.794\n"];
+"FL1" -> "FL2"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 9.796\nBuffer length: 4.9\nMost recent transform: 529.694\nOldest transform: 524.794\n"];
+"base_link" -> "FR1"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 9.796\nBuffer length: 4.9\nMost recent transform: 529.694\nOldest transform: 524.794\n"];
+"FR1" -> "FR2"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 9.796\nBuffer length: 4.9\nMost recent transform: 529.694\nOldest transform: 524.794\n"];
+"base_link" -> "RL1"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 9.796\nBuffer length: 4.9\nMost recent transform: 529.694\nOldest transform: 524.794\n"];
+"RL1" -> "RL2"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 9.796\nBuffer length: 4.9\nMost recent transform: 529.694\nOldest transform: 524.794\n"];
+"base_link" -> "RR1"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 9.796\nBuffer length: 4.9\nMost recent transform: 529.694\nOldest transform: 524.794\n"];
+"RR1" -> "RR2"[label=" Broadcaster: /robot_state_publisher\nAverage rate: 9.796\nBuffer length: 4.9\nMost recent transform: 529.694\nOldest transform: 524.794\n"];
+edge [style=invis];
+ subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
+"Recorded at time: 529.761"[ shape=plaintext ] ;
+}->"map";
+}
