@@ -6,8 +6,7 @@ import numpy as np
 import rospy
 from . GaitController import GaitController
 from . PIDController import PID_controller
-from . LQRController import LQR_controller  # Add this import
-from RoboticsUtilities.Transformations import rotxyz, rotz
+from RoboticsUtilities.Transformations import rotxyz,rotz
 
 
 class TrotGaitController(GaitController):
@@ -16,7 +15,6 @@ class TrotGaitController(GaitController):
         self.use_button = True
         self.autoRest = True
         self.trotNeeded = True
-        self.use_lqr = False  # Add this flag to track which controller to use
 
         contact_phases = np.array([[1, 1, 1, 0],  # 0: Leg swing
                                    [1, 0, 1, 1],  # 1: Moving stance forward
@@ -26,6 +24,7 @@ class TrotGaitController(GaitController):
         z_error_constant = 0.02 * 4    # This constant determines how fast we move
                                        # toward the goal in the z direction
         
+
         z_leg_lift = 0.07
 
         super().__init__(stance_time, swing_time, time_step, contact_phases, default_stance)
@@ -34,28 +33,26 @@ class TrotGaitController(GaitController):
         self.max_y_velocity = 0.015 #[m/s]
         self.max_yaw_rate = 0.6 #[rad/s]
 
+
         self.swingController = TrotSwingController(self.stance_ticks, self.swing_ticks, self.time_step,
                                                    self.phase_length, z_leg_lift, self.default_stance)
 
         self.stanceController = TrotStanceController(self.phase_length, self.stance_ticks, self.swing_ticks,
                                                      self.time_step, z_error_constant)
 
-        # Initialize both controllers
+
+        # TODO: tune kp, ki and kd
+        #                                     kp    ki    kd
         self.pid_controller = PID_controller(0.15, 0.02, 0.002)
-        
-        # Initialize LQR controller with tuned parameters
-        self.lqr_controller = LQR_controller(
-            q_angle=1.2,         # Increased for better disturbance rejection
-            q_rate=0.12,         # Increased for better damping
-            r_input=0.003,       # Decreased slightly for more responsive control
-            expected_dt=time_step,
-            max_compensation=0.6  # Increased slightly for better recovery from disturbances
-        )
 
     def updateStateCommand(self, msg, state, command):
         command.velocity[0] = msg.axes[4] * self.max_x_velocity
         command.velocity[1] = msg.axes[3] * self.max_y_velocity
         command.yaw_rate = msg.axes[0] * self.max_yaw_rate
+
+        rospy.loginfo(f"Trot Joystick Axes: {msg.axes}")
+        #rospy.loginfo(f"Joystick Buttons: {msg.buttons}")
+
 
         if self.use_button:
             if msg.buttons[7]:
@@ -69,19 +66,9 @@ class TrotGaitController(GaitController):
                     self.trotNeeded = True
                 self.use_button = False
                 rospy.loginfo(f"Trot Gait Controller - Use autorest: {self.autoRest}")
-                
-            elif msg.buttons[4]:  # Use button 5 to toggle LQR
-                self.use_lqr = not self.use_lqr
-                self.use_button = False
-                if self.use_lqr:
-                    self.lqr_controller.reset()
-                    rospy.loginfo("Trot: Switched to LQR controller")
-                else:
-                    self.pid_controller.reset()
-                    rospy.loginfo("Trot: Switched to PID controller")
             
         if not self.use_button:
-            if not(msg.buttons[4] or msg.buttons[6] or msg.buttons[7]):
+            if not(msg.buttons[6] or msg.buttons[7]):
                 self.use_button = True
 
     def step(self, state, command):
@@ -109,29 +96,12 @@ class TrotGaitController(GaitController):
 
             # tilt compensation
             if self.use_imu:
-                if self.use_lqr:
-                    compensation = self.lqr_controller.run(state.imu_roll, state.imu_pitch)
-                else:
-                    compensation = self.pid_controller.run(state.imu_roll, state.imu_pitch)
-                
+                compensation = self.pid_controller.run(state.imu_roll, state.imu_pitch)
                 roll_compensation = -compensation[0]
                 pitch_compensation = -compensation[1]
 
-                if not hasattr(self, 'debug_counter'):
-                    self.debug_counter = 0
-                
-                if self.debug_counter % 30 == 10:  # Offset from other counters to space out logs
-                    rospy.loginfo("Trot: IMU values - roll=%.4f, pitch=%.4f", 
-                                state.imu_roll, state.imu_pitch)
-                    rospy.loginfo("Trot: Applying compensation - roll=%.4f, pitch=%.4f", 
-                                roll_compensation, pitch_compensation)
-                    # Log controller type
-                    rospy.loginfo("Trot: Using %s controller", "LQR" if self.use_lqr else "PID")
-                
-                self.debug_counter += 1
-
-                rot = rotxyz(roll_compensation, pitch_compensation, 0)
-                new_foot_locations = np.matmul(rot, new_foot_locations)
+                rot = rotxyz(roll_compensation,pitch_compensation,0)
+                new_foot_locations = np.matmul(rot,new_foot_locations)
             state.ticks += 1
             return new_foot_locations
         else:
@@ -145,7 +115,6 @@ class TrotGaitController(GaitController):
         state.robot_height = command.robot_height
 
         return state.foot_locations
-
 
 class TrotSwingController(object):
     def __init__(self, stance_ticks, swing_ticks, time_step, phase_length, z_leg_lift, default_stance):
@@ -186,7 +155,6 @@ class TrotSwingController(object):
         delta_foot_location = velocity * self.time_step
         z_vector = np.array([0, 0, swing_height_ + command.robot_height])
         return foot_location * np.array([1, 1, 0]) + z_vector + delta_foot_location
-
 
 class TrotStanceController(object):
     def __init__(self,phase_length, stance_ticks, swing_ticks, time_step, z_error_constant):
