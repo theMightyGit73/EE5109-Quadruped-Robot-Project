@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #Author: lnotspotl
-#Modified with enhanced debugging, logging, and odometry
+#Modified with enhanced debugging, logging, odometry, and PID tuning support
 
 # Add script directory to Python path
 import sys
@@ -43,7 +43,7 @@ system_stats = {
 
 # Initialize ROS node
 rospy.init_node("Robot_Controller")
-rospy.loginfo("Starting NotSpot Robot Controller with enhanced debugging and odometry")
+rospy.loginfo("Starting NotSpot Robot Controller with enhanced debugging, odometry, and PID tuning")
 
 # Create log directory if it doesn't exist
 if LOG_TO_FILE:
@@ -121,6 +121,10 @@ else:
     rospy.logwarn("IMU is disabled - robot will not use orientation feedback")
 
 rospy.Subscriber("notspot_joy/joy_ramped", Joy, notspot_robot.joystick_command)
+
+# Add PID tuning subscriber
+rospy.Subscriber("/notspot_controller/pid_tuning", Float64MultiArray, notspot_robot.handle_pid_tuning)
+rospy.loginfo("Subscribed to PID tuning commands")
 
 # Global joint state data
 joint_states = None
@@ -229,11 +233,30 @@ def publish_state_visualization(state, command, odom_x=0, odom_y=0, odom_yaw=0):
             x, y, z = state.foot_locations[0, i], state.foot_locations[1, i], state.foot_locations[2, i]
             state_str.append(f"║ {labels[i]}: x={x:+7.4f}, y={y:+7.4f}, z={z:+7.4f}          ║")
     
+    # Add controller information
+    pid_info = ""
+    lqr_info = ""
+    
+    if hasattr(notspot_robot.currentController, 'pid_controller'):
+        pid = notspot_robot.currentController.pid_controller
+        pid_info = f"║ PID: kp={pid.kp:.4f}, ki={pid.ki:.4f}, kd={pid.kd:.4f}        ║"
+    
+    if hasattr(notspot_robot.currentController, 'lqr_controller'):
+        lqr = notspot_robot.currentController.lqr_controller
+        lqr_info = f"║ LQR: q_angle={lqr.q_angle:.4f}, q_rate={lqr.q_rate:.4f}, r_input={lqr.r_input:.4f} ║"
+    
+    if pid_info or lqr_info:
+        state_str.append("╠════════════ CONTROLLER PARAMETERS ════════════╣")
+        if pid_info:
+            state_str.append(pid_info)
+        if lqr_info:
+            state_str.append(lqr_info)
+    
     # System stats
     state_str.append("╠═════════════════ SYSTEM STATS ══════════════╣")
     avg_loop_time = np.mean(system_stats['loop_time_stats']['last_100']) if system_stats['loop_time_stats']['last_100'] else 0
     max_loop_time = max(system_stats['loop_time_stats']['last_100']) if system_stats['loop_time_stats']['last_100'] else 0
-    state_str.append(f"║ CPU: {system_stats['cpu_percent']:5.1f}%, Loop: {avg_loop_time:5.2f}ms (max: {max_loop_time:5.2f}ms) ║")
+    state_str.append(f"║ CPU: {system_stats['cpu_percent']:5.1f}%, Loop: {avg_loop_time*1000:5.2f}ms (max: {max_loop_time*1000:5.2f}ms) ║")
     
     state_str.append("╚═══════════════════════════════════════════════╝")
     
@@ -420,6 +443,15 @@ while not rospy.is_shutdown():
         # Debug output for foot positions
         foot_heights = leg_positions[2, :]
         rospy.loginfo(f"Foot heights: FR={foot_heights[0]:.4f}, FL={foot_heights[1]:.4f}, RR={foot_heights[2]:.4f}, RL={foot_heights[3]:.4f}")
+        
+        # Add controller information
+        if hasattr(notspot_robot.currentController, 'pid_controller'):
+            pid = notspot_robot.currentController.pid_controller
+            rospy.loginfo(f"PID: kp={pid.kp:.4f}, ki={pid.ki:.4f}, kd={pid.kd:.4f}")
+        
+        if hasattr(notspot_robot.currentController, 'lqr_controller'):
+            lqr = notspot_robot.currentController.lqr_controller
+            rospy.loginfo(f"LQR: q_angle={lqr.q_angle:.4f}, q_rate={lqr.q_rate:.4f}, r_input={lqr.r_input:.4f}")
         
         # Log to file if enabled
         current_timestamp = time.time() - start_time

@@ -19,7 +19,7 @@ class RestController(object):
             q_angle=1.2,        # Increased for better disturbance rejection
             q_rate=0.12,        # Increased for better damping
             r_input=0.003,      # Decreased slightly for more responsive control
-            expected_dt=0.002,  # Expected control loop time step
+            expected_dt=0.02,  # Expected control loop time step
             max_compensation=0.6 # Increased slightly for better recovery
         )
         
