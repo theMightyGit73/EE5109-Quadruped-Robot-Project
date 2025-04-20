@@ -59,6 +59,7 @@ Buttons (Number Keys):
    6 : (Tuning Mode)
    7 : (Autorest (Trot only))
    8 : (Roll/Pitch Compensation)
+   9 : (PID Analysis - Generate graphs)
 
 Controller Tuning Mode (after pressing 6):
    p : Select PID mode
@@ -139,7 +140,8 @@ MODE_DESCRIPTIONS = {
     '5': "CONTROLLER TOGGLE - Switch PID/LQR",
     '6': "TUNING MODE - Adjust control parameters",
     '7': "AUTOREST - Trot mode auto reset",
-    '8': "IMU COMPENSATION - Roll/pitch stabilization"
+    '8': "IMU COMPENSATION - Roll/pitch stabilization" ,
+    '9': "PID ANALYSIS - Generate PID performance graphs"
 }
 
 # Key bindings for movement, rotation, and height
@@ -173,6 +175,7 @@ buttonBindings = {
     '6': 5,  # Button 5 (Tuning Mode)
     '7': 6,  # Button 6 (Autorest)
     '8': 7,  # Button 7 (Roll/Pitch Compensation)
+    '9': 8,  # Button 8 (PID Analysis)
 }
 
 # Special command bindings
@@ -406,7 +409,11 @@ if __name__ == "__main__":
                             robot_mode = "CRAWL"
                         elif key == '4':
                             robot_mode = "STAND"
-                    
+
+                        # Special handling for PID Analysis
+                        if key == '9':
+                            print(f"\n{Colors.MAGENTA}Generating automatic PID analysis...{Colors.RESET}\n")
+
                     # Publish the Joy message
                     joy_pub.publish(joy)
                     print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
@@ -627,10 +634,14 @@ if __name__ == "__main__":
                             tuning_msg.data = [2, 1, 0, 0, 0, 0, 0, 0]  # 2 = reset command for LQR
                         
                     elif command == 'generate_graph':
-                        rospy.loginfo("Requesting performance comparison graph generation")
-                        print(f"\n{Colors.MAGENTA}Generating performance comparison graph...{Colors.RESET}\n")
-                        
-                        tuning_msg.data = [4, 0, 0, 0, 0, 0]  # 4 = generate graph
+                        if tuning_mode and pid_target == "PID":
+                            print(f"\n{Colors.MAGENTA}Generating enhanced PID tuning graphs...{Colors.RESET}\n")
+                            # Use command code 6 for enhanced PID graphs
+                            tuning_msg.data = [6, 0, 0, 0, 0, 0]  # 6 = generate enhanced PID graphs
+                        else:
+                            print(f"\n{Colors.MAGENTA}Generating performance comparison graph...{Colors.RESET}\n")
+                            # Use the original command code 4 for standard graphs
+                            tuning_msg.data = [4, 0, 0, 0, 0, 0]  # 4 = generate standard graph
                         
                     elif command == 'start_study':
                         rospy.loginfo("Starting automated controller parameter study")

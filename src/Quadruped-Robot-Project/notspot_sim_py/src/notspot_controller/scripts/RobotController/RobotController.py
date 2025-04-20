@@ -11,6 +11,7 @@ import os # Needed for path manipulation and directory creation
 import csv # Needed for logging to CSV
 import matplotlib.pyplot as plt # Needed for plotting
 import pandas as pd # Needed for study graph generation
+import glob
 from datetime import datetime # Needed for timestamps
 
 from . StateCommand import State, Command, BehaviorState
@@ -1278,12 +1279,244 @@ class Robot(object):
                 else:
                     rospy.logwarn("Automated controller study not available")
             
+            elif command_type == 6:
+                if hasattr(self, 'generate_enhanced_pid_tuning_graphs'):
+                    rospy.loginfo("Generating enhanced PID tuning graphs...")
+                    # Get the path to the most recent study results file, or use a default
+                    study_files = glob.glob(f"{self.data_dir}/controller_study_*.csv")
+                    if study_files:
+                        latest_file = max(study_files, key=os.path.getctime)
+                        self.generate_enhanced_pid_tuning_graphs(latest_file)
+                    else:
+                        rospy.logwarn("No study files found for enhanced PID graphs")
+                else:
+                    rospy.logwarn("Enhanced PID graph generation not available")
+
             else:
                 rospy.logwarn(f"Unknown command type in PID tuning message: {command_type}")
             
         except Exception as e:
             rospy.logerr(f"Error processing PID tuning command: {str(e)}")
+    
+    def generate_enhanced_pid_tuning_graphs(self, results_file):
+        """Generate enhanced comparison graphs for PID parameter tuning"""
+        try:
+            df = pd.read_csv(results_file)
             
+            # Create a multi-panel figure
+            fig = plt.figure(figsize=(15, 12))
+            
+            # 1. Performance metrics panel
+            ax1 = fig.add_subplot(221)
+            performance_metrics = df[['Config', 'Roll_Error_Mean', 'Pitch_Error_Mean', 
+                                    'Roll_Error_Std', 'Pitch_Error_Std']]
+            
+            # Calculate combined performance index
+            performance_metrics['Combined_Index'] = (
+                performance_metrics['Roll_Error_Mean'] + 
+                performance_metrics['Pitch_Error_Mean'] + 
+                0.5 * (performance_metrics['Roll_Error_Std'] + 
+                    performance_metrics['Pitch_Error_Std'])
+            )
+            
+            # Plot performance index as bar chart
+            configs = performance_metrics['Config']
+            indices = performance_metrics['Combined_Index']
+            ax1.bar(configs, indices, color='teal')
+            ax1.set_title('Performance Index (Lower is Better)')
+            ax1.set_xlabel('Parameter Configuration')
+            ax1.set_ylabel('Performance Index')
+            plt.setp(ax1.get_xticklabels(), rotation=45, ha='right')
+            
+            # 2. Error over time visualization
+            ax2 = fig.add_subplot(222)
+            # This would be populated with time series data if available in your dataset
+            # For now, we'll simulate some data
+            time_points = np.linspace(0, 10, 100)
+            for i, config in enumerate(configs):
+                # Simulate error curves with different damping
+                error = np.exp(-i*0.5*time_points) * np.sin(time_points)
+                ax2.plot(time_points, error, label=config)
+            
+            ax2.set_title('Error Response Over Time (Simulated)')
+            ax2.set_xlabel('Time (s)')
+            ax2.set_ylabel('Error')
+            ax2.legend()
+            
+            # 3. Parameter correlation matrix
+            ax3 = fig.add_subplot(223)
+            if 'kp' in df.columns and 'ki' in df.columns and 'kd' in df.columns:
+                params = df[['kp', 'ki', 'kd', 'Roll_Error_Mean', 'Pitch_Error_Mean']]
+                correlation = params.corr()
+                im = ax3.imshow(correlation, cmap='coolwarm')
+                ax3.set_title('Parameter Correlation Matrix')
+                
+                # Add labels
+                param_names = correlation.columns
+                ax3.set_xticks(np.arange(len(param_names)))
+                ax3.set_yticks(np.arange(len(param_names)))
+                ax3.set_xticklabels(param_names)
+                ax3.set_yticklabels(param_names)
+                plt.setp(ax3.get_xticklabels(), rotation=45, ha='right')
+                
+                # Add colorbar
+                plt.colorbar(im, ax=ax3)
+                
+                # Add text annotations
+                for i in range(len(param_names)):
+                    for j in range(len(param_names)):
+                        ax3.text(j, i, f"{correlation.iloc[i, j]:.2f}",
+                            ha="center", va="center", color="black")
+            
+            # 4. Best parameters recommendation
+            ax4 = fig.add_subplot(224)
+            ax4.axis('off')  # No axes for text panel
+            
+            # Find best configuration
+            best_idx = performance_metrics['Combined_Index'].idxmin()
+            best_config = configs[best_idx]
+            
+            if 'kp' in df.columns and 'ki' in df.columns and 'kd' in df.columns:
+                best_kp = df.loc[best_idx, 'kp']
+                best_ki = df.loc[best_idx, 'ki']
+                best_kd = df.loc[best_idx, 'kd']
+                
+                recommendation_text = (
+                    "PID Tuning Recommendations\n"
+                    "==========================\n\n"
+                    f"Best Configuration: {best_config}\n\n"
+                    f"Parameters:\n"
+                    f"  kp = {best_kp:.4f}\n"
+                    f"  ki = {best_ki:.4f}\n"
+                    f"  kd = {best_kd:.4f}\n\n"
+                    f"Performance:\n"
+                    f"  Roll Error: {df.loc[best_idx, 'Roll_Error_Mean']:.4f} ± {df.loc[best_idx, 'Roll_Error_Std']:.4f}\n"
+                    f"  Pitch Error: {df.loc[best_idx, 'Pitch_Error_Mean']:.4f} ± {df.loc[best_idx, 'Pitch_Error_Std']:.4f}\n"
+                    f"  Combined Index: {performance_metrics.loc[best_idx, 'Combined_Index']:.4f}\n\n"
+                    "Tuning Tips:\n"
+                    "- Increase kp for faster response\n"
+                    "- Increase ki to reduce steady-state error\n"
+                    "- Increase kd to reduce overshoot and oscillation"
+                )
+                
+                ax4.text(0.05, 0.95, recommendation_text, 
+                        transform=ax4.transAxes,
+                        fontsize=10, verticalalignment='top',
+                        family='monospace', bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.5))
+            
+            plt.tight_layout()
+            output_file = results_file.replace('.csv', '_enhanced_pid_tuning.png')
+            plt.savefig(output_file, dpi=300)
+            rospy.loginfo(f"Enhanced PID tuning graphs saved to {output_file}")
+            
+            plt.close(fig)
+            
+        except Exception as e:
+            rospy.logerr(f"Error generating enhanced PID tuning graphs: {str(e)}")
+
+    def auto_generate_pid_analysis(self):
+        """Automatically generate PID analysis graphs without manual triggers"""
+        
+        # Check if we have enough data
+        if len(self.performance_log) < 50:
+            rospy.loginfo("Not enough performance data collected yet for PID analysis (need at least 50 data points)")
+            return False
+        
+        try:
+            # Filter for PID data only
+            pid_data = [entry for entry in self.performance_log if entry['controller_mode'] == 'PID']
+            
+            if len(pid_data) < 30:
+                rospy.loginfo(f"Need more PID data for analysis. Currently have {len(pid_data)} PID data points")
+                return False
+                
+            # Create figure for detailed PID analysis
+            fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+            fig.suptitle('PID Controller Performance Analysis', fontsize=16)
+            
+            # Extract PID parameters if available
+            if hasattr(self.currentController, 'pid_controller'):
+                current_kp = self.currentController.pid_controller.kp
+                current_ki = self.currentController.pid_controller.ki
+                current_kd = self.currentController.pid_controller.kd
+                parameters_text = f"Current PID Parameters: kp={current_kp:.4f}, ki={current_ki:.4f}, kd={current_kd:.4f}"
+                fig.text(0.5, 0.01, parameters_text, ha='center', fontsize=12, 
+                        bbox=dict(facecolor='white', alpha=0.8))
+            
+            # Prepare data for time series plots
+            timestamps = [entry['timestamp'] for entry in pid_data]
+            roll_errors = [entry['roll_error'] for entry in pid_data]
+            pitch_errors = [entry['pitch_error'] for entry in pid_data]
+            
+            # Normalize timestamps to start from 0
+            if timestamps:
+                min_time = min(timestamps)
+                timestamps = [t - min_time for t in timestamps]
+            
+            # 1. Roll Error Time Series
+            axes[0, 0].plot(timestamps, roll_errors, 'r-', alpha=0.7, label='Roll Error')
+            axes[0, 0].set_title('Roll Error Over Time')
+            axes[0, 0].set_xlabel('Time (s)')
+            axes[0, 0].set_ylabel('Error (rad)')
+            axes[0, 0].legend()
+            axes[0, 0].grid(True)
+            
+            # 2. Pitch Error Time Series
+            axes[0, 1].plot(timestamps, pitch_errors, 'b-', alpha=0.7, label='Pitch Error')
+            axes[0, 1].set_title('Pitch Error Over Time')
+            axes[0, 1].set_xlabel('Time (s)')
+            axes[0, 1].set_ylabel('Error (rad)')
+            axes[0, 1].legend()
+            axes[0, 1].grid(True)
+            
+            # 3. Error Histograms
+            axes[1, 0].hist(roll_errors, bins=20, alpha=0.7, color='r')
+            axes[1, 0].set_title('Roll Error Distribution')
+            axes[1, 0].set_xlabel('Error (rad)')
+            axes[1, 0].set_ylabel('Frequency')
+            axes[1, 0].grid(True)
+            
+            # Add statistics
+            roll_mean = np.mean(roll_errors)
+            roll_std = np.std(roll_errors)
+            roll_abs_mean = np.mean(np.abs(roll_errors))
+            axes[1, 0].axvline(roll_mean, color='k', linestyle='dashed', linewidth=1)
+            axes[1, 0].text(0.05, 0.95, f'Mean: {roll_mean:.4f}\nStd Dev: {roll_std:.4f}\nAbs Mean: {roll_abs_mean:.4f}', 
+                        transform=axes[1, 0].transAxes, verticalalignment='top',
+                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
+            
+            # 4. Pitch Error Histogram
+            axes[1, 1].hist(pitch_errors, bins=20, alpha=0.7, color='b')
+            axes[1, 1].set_title('Pitch Error Distribution')
+            axes[1, 1].set_xlabel('Error (rad)')
+            axes[1, 1].set_ylabel('Frequency')
+            axes[1, 1].grid(True)
+            
+            # Add statistics
+            pitch_mean = np.mean(pitch_errors)
+            pitch_std = np.std(pitch_errors)
+            pitch_abs_mean = np.mean(np.abs(pitch_errors))
+            axes[1, 1].axvline(pitch_mean, color='k', linestyle='dashed', linewidth=1)
+            axes[1, 1].text(0.05, 0.95, f'Mean: {pitch_mean:.4f}\nStd Dev: {pitch_std:.4f}\nAbs Mean: {pitch_abs_mean:.4f}', 
+                        transform=axes[1, 1].transAxes, verticalalignment='top',
+                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
+            
+            # Adjust layout and save
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = f"{self.data_dir}/pid_analysis_{timestamp}.png"
+            plt.savefig(output_file, dpi=300)
+            rospy.loginfo(f"PID analysis graph saved to {output_file}")
+            
+            plt.close(fig)
+            return True
+            
+        except Exception as e:
+            rospy.logerr(f"Error generating PID analysis graphs: {str(e)}")
+            return False
+
     def generate_controller_study_graphs(self, results_file):
         """Generate summary graphs for the controller study"""
         try:

@@ -13,7 +13,8 @@ import time
 import numpy as np
 import psutil
 import threading
-import math
+import pandas as pd  
+import matplotlib.pyplot as plt  
 import tf2_ros
 from datetime import datetime
 
@@ -31,6 +32,7 @@ DEBUG_PRINT_INTERVAL = 30  # Print debug info every X iterations
 TARGET_LOOP_TIME = 1.0/RATE  # Store this for later use
 LOG_TO_FILE = True  # Set to True to log to file
 LOG_FILE_PATH = os.path.expanduser("~/2425-EE5109/MiniProject/catkin_ws/logs/")
+PID_ANALYSIS_INTERVAL = 60  # Generate PID analysis every 60 seconds when in PID mode
 
 # System stats tracking
 system_stats = {
@@ -94,6 +96,8 @@ prev_foot_positions = None
 map_x = 0.0
 map_y = 0.0
 map_yaw = 0.0
+
+last_pid_analysis_time = rospy.Time.now()
 
 # Setup joint command publishers
 command_topics = ["/notspot_controller/FR1_joint/command",
@@ -494,6 +498,18 @@ while not rospy.is_shutdown():
     if debug_loop_counter % (DEBUG_PRINT_INTERVAL * 2) == 0:
         publish_state_visualization(notspot_robot.state, notspot_robot.command, x_pos, y_pos, yaw)
     
+    # Auto-generate PID analysis when in PID mode (if enough time has passed)
+    if ((current_time - last_pid_analysis_time).to_sec() > PID_ANALYSIS_INTERVAL and 
+            hasattr(notspot_robot.currentController, 'use_lqr') and 
+            not notspot_robot.currentController.use_lqr):  # Only when in PID mode
+        
+        # Try to generate PID analysis
+        if hasattr(notspot_robot, 'auto_generate_pid_analysis'):
+            success = notspot_robot.auto_generate_pid_analysis()
+            if success:
+                last_pid_analysis_time = current_time
+                rospy.loginfo("Auto-generated PID analysis graphs")
+
     # Compute inverse kinematics
     try:
         joint_angles = inverseKinematics.inverse_kinematics(leg_positions,
