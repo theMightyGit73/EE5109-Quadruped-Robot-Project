@@ -282,7 +282,7 @@ def notify_study_started():
     print(f"{Colors.MAGENTA}* This will take several minutes...        *{Colors.RESET}")
     print(f"{Colors.MAGENTA}" + "*"*50 + f"{Colors.RESET}\n")
 
-def print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step):
+def print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, controller_type=None):
     """Print a concise status header showing the most important information"""
     if tuning_mode:
         active_controller = pid_target
@@ -297,6 +297,11 @@ def print_status_header(tuning_mode, pid_target, current_param, current_lqr_para
         status = f"{Colors.BOLD}STATUS:{Colors.RESET} "
         status += f"Mode [{Colors.CYAN}NORMAL{Colors.RESET}] | "
         status += f"Robot [{Colors.GREEN}{robot_mode}{Colors.RESET}]"
+        
+        # Add controller type if available
+        if controller_type:
+            color = Colors.GREEN if controller_type == "PID" else Colors.BLUE
+            status += f" | Controller [{color}{controller_type}{Colors.RESET}]"
     
     print("\n" + status + "\n")
 
@@ -331,7 +336,8 @@ if __name__ == "__main__":
     pid_target = "PID"      # Target controller to tune (PID or LQR)
     robot_mode = "REST"     # Current robot mode
     tuning_mode = False     # Whether we're in tuning mode
-    
+    current_controller = "PID"
+
     print(msg)
     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
     rospy.loginfo("Teleop keyboard running with enhanced tuning mode")
@@ -349,14 +355,14 @@ if __name__ == "__main__":
                 if tuning_mode:
                     tuning_mode = False
                     notify_tuning_mode_change(False)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                 continue
                 
             # Special case for button 6 (tuning mode)
             if key == '6':
                 tuning_mode = True
                 notify_tuning_mode_change(True)
-                print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                 continue
                 
             # Handle normal mode keys
@@ -390,7 +396,7 @@ if __name__ == "__main__":
                     
                     # Publish the Joy message
                     joy_pub.publish(joy)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
 
                 # Handle button keys
                 elif key in buttonBindings.keys():
@@ -409,6 +415,10 @@ if __name__ == "__main__":
                             robot_mode = "CRAWL"
                         elif key == '4':
                             robot_mode = "STAND"
+                        elif key == '5':
+                            # Toggle controller type
+                            current_controller = "LQR" if current_controller == "PID" else "PID"
+                            notify_controller_change(current_controller)
 
                         # Special handling for PID Analysis
                         if key == '9':
@@ -416,7 +426,7 @@ if __name__ == "__main__":
 
                     # Publish the Joy message
                     joy_pub.publish(joy)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                     
                 # Print help
                 elif key == 'h':
@@ -432,63 +442,63 @@ if __name__ == "__main__":
                     pid_target = "PID"
                     notify_controller_change("PID")
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                 
                 elif key == 'l':  # Select LQR controller
                     pid_target = "LQR"
                     notify_controller_change("LQR")
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                 
                 # Check for PID parameter selection keys
                 elif pid_target == "PID" and key == 'k':  # Changed from 'p' to 'k' for kp
                     current_param = 'kp'
                     rospy.loginfo(f"Selected PID kp parameter: {pid_params['kp']:.4f}")
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                     
                 elif pid_target == "PID" and key == 'i':
                     current_param = 'ki'
                     rospy.loginfo(f"Selected PID ki parameter: {pid_params['ki']:.4f}")
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                     
                 elif pid_target == "PID" and key == 'd':
                     current_param = 'kd'
                     rospy.loginfo(f"Selected PID kd parameter: {pid_params['kd']:.4f}")
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                 
                 # Check for LQR parameter selection keys    
                 elif pid_target == "LQR" and key == 'a':
                     current_lqr_param = 'q_angle'
                     rospy.loginfo(f"Selected LQR q_angle parameter: {lqr_params['q_angle']:.4f}")
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                     
                 elif pid_target == "LQR" and key == 'r':
                     current_lqr_param = 'q_rate'
                     rospy.loginfo(f"Selected LQR q_rate parameter: {lqr_params['q_rate']:.4f}")
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                     
                 elif pid_target == "LQR" and key == 'n':  # Changed from 'i' to 'n' for r_input
                     current_lqr_param = 'r_input'
                     rospy.loginfo(f"Selected LQR r_input parameter: {lqr_params['r_input']:.4f}")
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                     
                 elif pid_target == "LQR" and key == 't':
                     current_lqr_param = 'expected_dt'
                     rospy.loginfo(f"Selected LQR expected_dt parameter: {lqr_params['expected_dt']:.4f}")
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                     
                 elif pid_target == "LQR" and key == 'c':
                     current_lqr_param = 'max_compensation'
                     rospy.loginfo(f"Selected LQR max_compensation parameter: {lqr_params['max_compensation']:.4f}")
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                     
                 # Handle parameter value changes
                 elif key == '+' or key == '=':  # '=' is on the same key as '+' on most keyboards
@@ -547,7 +557,7 @@ if __name__ == "__main__":
                     
                     pid_tuning_pub.publish(tuning_msg)
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                     
                 elif key == '-':
                     tuning_msg = Float64MultiArray()
@@ -605,7 +615,7 @@ if __name__ == "__main__":
                     
                     pid_tuning_pub.publish(tuning_msg)
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                 
                 # Handle special commands
                 elif key in commandBindings:
@@ -654,7 +664,7 @@ if __name__ == "__main__":
                     if command != 'exit_tuning':  # Skip publishing if just exiting tuning mode
                         pid_tuning_pub.publish(tuning_msg)
                         printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                        print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                        print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                     
                 # Change parameter step size
                 elif key == '[':
@@ -662,20 +672,20 @@ if __name__ == "__main__":
                     rospy.loginfo(f"Decreased step size to {param_step:.4f}")
                     print(f"{Colors.CYAN}Step size decreased to {param_step:.4f}{Colors.RESET}")
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                     
                 elif key == ']':
                     param_step = param_step*2
                     rospy.loginfo(f"Increased step size to {param_step:.4f}")
                     print(f"{Colors.CYAN}Step size increased to {param_step:.4f}{Colors.RESET}")
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                     
                 # Print help
                 elif key == 'h':
                     print(msg)
                     printCurrentMode(tuning_mode, pid_target, current_param, current_lqr_param, param_step, pid_params, lqr_params)
-                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step)
+                    print_status_header(tuning_mode, pid_target, current_param, current_lqr_param, robot_mode, param_step, current_controller)
                 
             # Check for CTRL-C to quit
             if key == '\x03':  # CTRL-C
