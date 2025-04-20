@@ -2,6 +2,7 @@
 #Author: lnotspotl
 #Enhanced with improved logging, diagnostics, controller comparison, and PID tuning
 
+# Enhanced with improved logging, diagnostics, controller comparison, and PID tuning
 import numpy as np
 import tf # Make sure this is tf and not tf2_ros here if used for transformations
 import rospy
@@ -9,11 +10,13 @@ import time
 import collections
 import os # Needed for path manipulation and directory creation
 import csv # Needed for logging to CSV
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend to prevent threading issues
 import matplotlib.pyplot as plt # Needed for plotting
 import pandas as pd # Needed for study graph generation
 import glob
-from datetime import datetime # Needed for timestamps
 
+from datetime import datetime # Needed for timestamps
 from . StateCommand import State, Command, BehaviorState
 from . RestController import RestController
 from . TrotGaitController import TrotGaitController

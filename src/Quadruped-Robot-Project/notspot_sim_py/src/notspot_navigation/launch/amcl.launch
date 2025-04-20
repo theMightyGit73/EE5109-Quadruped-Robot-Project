@@ -1,23 +1,56 @@
 <launch>
   <param name="use_sim_time" value="true" />
 
-  <node pkg="amcl" type="amcl" name="amcl">
-    <!-- AMCL parameters -->
+  <arg name="map_file" default="$(find notspot_navigation)/maps/closed_map.yaml"/>
 
-    <param name="odom_model_type" value="diff-corrected"/>
-    <param name="odom_alpha5" value="0.1"/>
-    <param name="transform_tolerance" value="0.2" />
-    <param name="gui_publish_rate" value="10.0"/>
-    <param name="laser_max_beams" value="30"/>
-    <param name="min_particles" value="500"/>
-    <param name="max_particles" value="5000"/>
-    <param name="kld_err" value="0.05"/>
+  <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
+
+  <node pkg="amcl" type="amcl" name="amcl" output="screen">
+    <!-- Frame IDs -->
+    <param name="odom_frame_id" value="odom"/>
+    <param name="base_frame_id" value="base_link"/>
+    <param name="global_frame_id" value="map"/>
+    
+    <!-- For quadruped, omnidirectional model tends to work better -->
+    <param name="odom_model_type" value="omni-corrected"/>
+    
+    <!-- Increase noise parameters for quadruped motion -->
+    <param name="odom_alpha1" value="0.4"/>  <!-- X/rotation noise when rotating -->
+    <param name="odom_alpha2" value="0.4"/>  <!-- X/translation noise when translating -->
+    <param name="odom_alpha3" value="0.4"/>  <!-- Y/translation noise when translating -->
+    <param name="odom_alpha4" value="0.4"/>  <!-- Y/rotation noise when rotating -->
+    <param name="odom_alpha5" value="0.2"/>  <!-- Translation noise -->
+    
+    <!-- Better update thresholds for quadruped -->
+    <param name="update_min_d" value="0.05"/>  <!-- Update after moving 5cm -->
+    <param name="update_min_a" value="0.1"/>   <!-- Update after rotating 0.1 rad (~6 deg) -->
+    <param name="transform_tolerance" value="0.3" />  <!-- Higher for quadruped -->
+    
+    <!-- LIDAR parameters -->
+    <param name="laser_max_beams" value="50"/>  <!-- Increased for better matching -->
+    <param name="laser_max_range" value="10.0"/>
+    <param name="laser_min_range" value="0.2"/>
+    
+    <!-- Particle filter parameters -->
+    <param name="min_particles" value="1000"/>  <!-- More particles for quadruped -->
+    <param name="max_particles" value="7000"/>
+    <param name="kld_err" value="0.03"/>  <!-- Lower = more accurate -->
     <param name="kld_z" value="0.99"/>
-    <param name="odom_alpha1" value="0.2"/>
-    <param name="odom_alpha2" value="0.2"/>
-
+    <param name="recovery_alpha_slow" value="0.0"/>  <!-- Disable to prevent random resampling -->
+    <param name="recovery_alpha_fast" value="0.0"/>
+    
+    <!-- Initial pose for better starting localization -->
+    <param name="initial_pose_x" value="0.0"/>
+    <param name="initial_pose_y" value="0.0"/>
+    <param name="initial_pose_a" value="0.0"/>
+    <param name="initial_cov_xx" value="0.5"/>
+    <param name="initial_cov_yy" value="0.5"/>
+    <param name="initial_cov_aa" value="0.1"/>
+    
+    <param name="gui_publish_rate" value="10.0"/>
+    
     <!-- Remap topics -->
-    <remap from="scan" to="/notspot/lidar/scan"/>
+    <remap from="scan" to="/scan"/>
     <remap from="map" to="/map"/>
   </node>
 </launch>

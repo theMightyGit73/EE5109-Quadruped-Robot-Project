@@ -2,8 +2,8 @@
   <param name="use_sim_time" value="true" />
 
   <!-- Map server -->
-  <arg name="map_file" default="$(find notspot_navigation)/maps/map.yaml"/>
-  <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
+  <!--<arg name="map_file" default="$(find notspot_navigation)/maps/closed_map.yaml"/>
+  <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" /> -->
 
   <!-- AMCL for localization -->
   <include file="$(find notspot_navigation)/launch/amcl.launch" />
